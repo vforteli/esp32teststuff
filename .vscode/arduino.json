@@ -1,0 +1,7 @@
+{
+    "board": "esp32:esp32:lolin32",
+    "configuration": "FlashFreq=80,PartitionScheme=default,CPUFreq=240,UploadSpeed=115200",
+    "port": "COM5",
+    "programmer": "AVRISP mkII",
+    "sketch": "teststuff.ino"
+}
