@@ -1,13 +1,15 @@
+#include "WiFi.h"
 #include "Wire.h"
+#include "config.h"
 #include "Adafruit_GFX.h"
 #include "Adafruit_SSD1306.h"
 
 const int SCREEN_WIDTH = 128;
 const int SCREEN_HEIGHT = 64;
 
-const int sensorPin = 26;
+const int sensorPin = 39;
 int x = 0;
-int previous_y;
+int previous_y = 0;
 int previous_x = 0;
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
@@ -28,8 +30,18 @@ void setup()
   displayText("Starting up");
   delay(500);
 
-  float lightValue = analogRead(sensorPin);
-  previous_y = (lightValue / 4095) * (20 - 63) + 63;
+  WiFi.begin(ssid, key);
+
+  while (WiFi.status() != WL_CONNECTED)
+  {
+    displayText("Connecting to wifi...");
+    delay(500);
+  }
+
+  displayText("Wifi connected \\o/");
+  delay(500);
+
+  previous_y = normalizeToGraph(analogRead(sensorPin));
 }
 
 const String lightLevelText = "Light level: ";
@@ -38,14 +50,12 @@ void loop()
 {
   float lightValue = analogRead(sensorPin);
 
-  Serial.println(lightLevelText + lightValue);
   displayText(lightLevelText + lightValue);
 
-  int y = (lightValue / 4095) * (20 - 63) + 63;
+  int y = normalizeToGraph(lightValue);
 
-  Serial.println(y);
-  //display.drawPixel(x, y, WHITE);
   display.drawLine(previous_x, previous_y, x, y, WHITE);
+  display.display();
   previous_y = y;
   previous_x = x;
   x += 1;
@@ -56,11 +66,18 @@ void loop()
     previous_x = 0;
   }
 
-  delay(500);
+  delay(500); // todo convert to non blocking
+}
+
+int normalizeToGraph(float value)
+{
+  return (value / 4095) * (20 - 63) + 63;
 }
 
 void displayText(String value)
 {
+  Serial.println(value);
+
   for (int y = 0; y < 8; y++)
   {
     for (int x = 0; x < SCREEN_WIDTH; x++)
