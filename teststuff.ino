@@ -1,14 +1,16 @@
-#include "WiFi.h"
-#include "Wire.h"
+#include <WiFi.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <Esp32MQTTClient.h>
+#include <ArduinoJson.h>
 #include "config.h"
-#include "Adafruit_GFX.h"
-#include "Adafruit_SSD1306.h"
-#include "Esp32MQTTClient.h"
 
 const int SCREEN_WIDTH = 128;
 const int SCREEN_HEIGHT = 64;
 
-const int sensorPin = 39;
+const int lightSensorPin = 39;
+const int pirSensorPin = 25;
 
 static bool hasIoTHub = false;
 int x = 0;
@@ -20,6 +22,8 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 void setup()
 {
   Serial.begin(115200);
+
+  pinMode(pirSensorPin, INPUT);
 
   // Start I2C Communication SDA = 5 and SCL = 4 on Wemos Lolin32 ESP32 with built-in SSD1306 OLED
   Wire.begin(5, 4);
@@ -52,14 +56,14 @@ void setup()
   }
   hasIoTHub = true;
 
-  previous_y = normalizeToGraph(analogRead(sensorPin));
+  previous_y = normalizeToGraph(analogRead(lightSensorPin));
 }
 
 const String lightLevelText = "Light level: ";
 
 void loop()
 {
-  float lightValue = analogRead(sensorPin);
+  float lightValue = analogRead(lightSensorPin);
 
   displayText(lightLevelText + lightValue);
 
@@ -77,17 +81,27 @@ void loop()
     previous_x = 0;
   }
 
+  bool movementDetected = digitalRead(pirSensorPin);
+
+  if (movementDetected)
+  {
+    Serial.println("Presence detected");
+  }
+  else
+  {
+    Serial.println("no movement?!");
+  }
+
   if (hasIoTHub)
   {
-    char buff[128];
+    DynamicJsonDocument json(128);
+    json["lightLevel"] = lightValue;
+    json["movementDetected"] = movementDetected;
 
-    // replace the following line with your data sent to Azure IoTHub
-    String json = "{\"lightLevel\":";
-    String jsonEnd = "}";
-    String foo = json + lightValue + jsonEnd;
-    snprintf(buff, 128, foo.c_str());
+    char buffer[128];
+    serializeJson(json, buffer);
 
-    if (Esp32MQTTClient_SendEvent(buff))
+    if (Esp32MQTTClient_SendEvent(buffer))
     {
       Serial.println("Sending data succeed");
     }
