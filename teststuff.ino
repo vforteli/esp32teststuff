@@ -3,11 +3,14 @@
 #include "config.h"
 #include "Adafruit_GFX.h"
 #include "Adafruit_SSD1306.h"
+#include "Esp32MQTTClient.h"
 
 const int SCREEN_WIDTH = 128;
 const int SCREEN_HEIGHT = 64;
 
 const int sensorPin = 39;
+
+static bool hasIoTHub = false;
 int x = 0;
 int previous_y = 0;
 int previous_x = 0;
@@ -41,6 +44,14 @@ void setup()
   displayText("Wifi connected \\o/");
   delay(500);
 
+  if (!Esp32MQTTClient_Init((const uint8_t *)connectionString))
+  {
+    hasIoTHub = false;
+    Serial.println("Initializing IoT hub failed.");
+    return;
+  }
+  hasIoTHub = true;
+
   previous_y = normalizeToGraph(analogRead(sensorPin));
 }
 
@@ -66,7 +77,27 @@ void loop()
     previous_x = 0;
   }
 
-  delay(500); // todo convert to non blocking
+  if (hasIoTHub)
+  {
+    char buff[128];
+
+    // replace the following line with your data sent to Azure IoTHub
+    String json = "{\"lightLevel\":";
+    String jsonEnd = "}";
+    String foo = json + lightValue + jsonEnd;
+    snprintf(buff, 128, foo.c_str());
+
+    if (Esp32MQTTClient_SendEvent(buff))
+    {
+      Serial.println("Sending data succeed");
+    }
+    else
+    {
+      Serial.println("Failure...");
+    }
+  }
+
+  delay(1000); // todo convert to non blocking
 }
 
 int normalizeToGraph(float value)
