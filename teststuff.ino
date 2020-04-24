@@ -85,6 +85,7 @@ void loop()
 
   if (movementDetected)
   {
+    lastMovementDetected = now;
     display.fillRect(0, 59, SCREEN_WIDTH, 5, BLACK);
     display.display();
 
