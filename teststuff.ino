@@ -71,7 +71,7 @@ void loop()
   x += 1;
   if (x > 127)
   {
-    display.clearDisplay();
+    display.fillRect(0, 10, SCREEN_WIDTH, 47, BLACK);
     x = 0;
     previous_x = 0;
   }
@@ -83,39 +83,38 @@ void loop()
   long now = millis();
   lastMovementDetected = now;
 
-  if (autoLightsEnabled)
+  if (movementDetected)
   {
-    if (movementDetected)
-    {
-      display.fillRect(0, 59, SCREEN_WIDTH, 5, BLACK);
-      display.display();
+    display.fillRect(0, 59, SCREEN_WIDTH, 5, BLACK);
+    display.display();
 
-      if (lightsTouched && !lightsOn)
+    if (autoLightsEnabled && lightsTouched && !lightsOn)
+    {
+      int result = setLights(true);
+      if (result == HTTP_CODE_OK)
       {
-        int result = setLights(true);
-        if (result == HTTP_CODE_OK)
-        {
-          Serial.println("Lights turned on");
-          lightsOn = true;
-          lightsTouched = true;
-        }
+        Serial.println("Lights turned on");
+        lightsOn = true;
+        lightsTouched = true;
       }
     }
-    else
-    {
-      int foo = normalize((float)(now - lastMovementDetected), 0, dimmerGracePeriod, 0, SCREEN_WIDTH);
-      display.fillRect(0, 59, foo, 5, WHITE);
-      display.display();
+  }
+  else
+  {
+    int foo = normalize((float)(now - lastMovementDetected), 0, dimmerGracePeriod, 0, SCREEN_WIDTH);
+    Serial.print("x should be: ");
+    Serial.println(foo);
+    display.fillRect(0, 59, foo, 5, WHITE);
+    display.display();
 
-      if (lastMovementDetected + dimmerGracePeriod < now && lightsOn)
+    if (autoLightsEnabled && lastMovementDetected + dimmerGracePeriod < now && lightsOn)
+    {
+      int result = setLights(false);
+      if (result == HTTP_CODE_OK)
       {
-        int result = setLights(false);
-        if (result == HTTP_CODE_OK)
-        {
-          Serial.println("Lights turned off");
-          lightsOn = false;
-          lightsTouched = true;
-        }
+        Serial.println("Lights turned off");
+        lightsOn = false;
+        lightsTouched = true;
       }
     }
   }
