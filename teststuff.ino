@@ -12,6 +12,9 @@ const int SCL_PIN = 4;
 const int SCREEN_WIDTH = 128;
 const int SCREEN_HEIGHT = 64;
 
+const int graphMinY = 10;
+const int graphMaxY = 57;
+
 const int lightSensorPin = 39;
 const int pirSensorPin = 25;
 
@@ -81,7 +84,6 @@ void loop()
   Serial.println(movementDetected);
 
   long now = millis();
-  lastMovementDetected = now;
 
   if (movementDetected)
   {
@@ -102,9 +104,7 @@ void loop()
   }
   else
   {
-    int foo = normalize((float)(now - lastMovementDetected), 0, dimmerGracePeriod, 0, SCREEN_WIDTH);
-    Serial.print("x should be: ");
-    Serial.println(foo);
+    int foo = scale((float)(now - lastMovementDetected), 0, dimmerGracePeriod, 0, SCREEN_WIDTH);
     display.fillRect(0, 59, foo, 5, WHITE);
     display.display();
 
@@ -145,14 +145,12 @@ void loop()
 
 int normalizeToGraph(float value)
 {
-  int max_output = 57;
-  return (value / 4095) * (20 - max_output) + max_output;
+  return scale(value, 0, 4095, graphMaxY, graphMinY);
 }
 
-// todo fix and refactor, yes yes they are reversed...
-int normalize(float value, int min_input, int max_input, int max_output, int min_output)
+int scale(int value, int input_min, int input_max, int scale_min, int scale_max)
 {
-  return (value / max_input) * (min_output - max_output) + max_output;
+  return (((float)value - input_min) / (input_max - input_min) * (scale_max - scale_min)) + scale_min;
 }
 
 void displayText(String value)
