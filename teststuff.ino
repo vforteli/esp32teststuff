@@ -6,6 +6,7 @@
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
 #include "config.h"
+#include "utils.h"
 
 const int SDA_PIN = 5;
 const int SCL_PIN = 4;
@@ -15,8 +16,8 @@ const int SCREEN_HEIGHT = 64;
 const int graphMinY = 10;
 const int graphMaxY = 57;
 
-const int lightSensorPin = 39;
-const int pirSensorPin = 25;
+const int LIGHT_SENSOR_PIN = 39;
+const int PIR_SENSOR_PIN = 25;
 
 static bool hasIoTHub = false;
 int x = 0;
@@ -25,8 +26,8 @@ int previous_x = 0;
 int dimmerGracePeriod = 10 * 1000;
 long lastMovementDetected = 0;
 bool lightsTouched = false;
-bool lightsOn = true;           // makes more sense to assume lights are on. logic should not  turn on lights ever if initial state is on. in the future, call hue api to get initial state
-bool autoLightsEnabled = false; // maybe toggle from touch pin
+bool lightsOn = true;          // makes more sense to assume lights are on. logic should not  turn on lights ever if initial state is on. in the future, call hue api to get initial state
+bool autoLightsEnabled = true; // maybe toggle from touch pin
 
 HTTPClient http;
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
@@ -37,8 +38,8 @@ void setup()
 
   lastMovementDetected = millis();
 
-  pinMode(pirSensorPin, INPUT);
-  pinMode(lightSensorPin, INPUT);
+  pinMode(PIR_SENSOR_PIN, INPUT);
+  pinMode(LIGHT_SENSOR_PIN, INPUT);
 
   setupDisplay();
   delay(500);
@@ -54,15 +55,14 @@ void setup()
   }
   hasIoTHub = true;
 
-  previous_y = normalizeToGraph(analogRead(lightSensorPin));
+  previous_y = normalizeToGraph(analogRead(LIGHT_SENSOR_PIN));
 }
 
 const String lightLevelText = "Light level: ";
 
 void loop()
 {
-  float lightValue = analogRead(lightSensorPin);
-
+  float lightValue = analogRead(LIGHT_SENSOR_PIN);
   displayText(lightLevelText + (uint)lightValue);
 
   int y = normalizeToGraph(lightValue);
@@ -79,9 +79,8 @@ void loop()
     previous_x = 0;
   }
 
-  bool movementDetected = digitalRead(pirSensorPin);
-  Serial.print("Movement detected: ");
-  Serial.println(movementDetected);
+  bool movementDetected = digitalRead(PIR_SENSOR_PIN);
+  Serial.printf("Movement detected: %d\n", movementDetected);
 
   long now = millis();
 
@@ -122,6 +121,7 @@ void loop()
 
   if (hasIoTHub)
   {
+    long startMillis = millis();
     DynamicJsonDocument json(128);
     json["lightLevel"] = lightValue;
     json["movementDetected"] = movementDetected;
@@ -132,12 +132,14 @@ void loop()
 
     if (Esp32MQTTClient_SendEvent(buffer))
     {
-      Serial.println("Sending data succeed");
+      Serial.println("Sending data succeeded");
     }
     else
     {
       Serial.println("Failure...");
     }
+
+    Serial.printf("Sending message took %d ms\n", millis() - startMillis);
   }
 
   delay(1000); // todo convert to non blocking
@@ -146,11 +148,6 @@ void loop()
 int normalizeToGraph(float value)
 {
   return scale(value, 0, 4095, graphMaxY, graphMinY);
-}
-
-int scale(int value, int input_min, int input_max, int scale_min, int scale_max)
-{
-  return (((float)value - input_min) / (input_max - input_min) * (scale_max - scale_min)) + scale_min;
 }
 
 void displayText(String value)
@@ -201,13 +198,13 @@ int setLights(bool on)
   http.begin(hueApiUrl + "groups/5/action");
   DynamicJsonDocument json(128);
   json["on"] = on;
+  //json["transitiontime"] = 200; // 20 seconds
 
   char buffer[128];
   serializeJson(json, buffer);
   int result = http.PUT(buffer);
-  Serial.print("Http result: ");
-  Serial.println(result);
   http.end();
+  Serial.printf("Http result: %d\n", result);
 
   return result;
 }
