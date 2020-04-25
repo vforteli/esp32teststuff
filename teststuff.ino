@@ -18,6 +18,7 @@ const int graphMaxY = 57;
 
 const int LIGHT_SENSOR_PIN = 39;
 const int PIR_SENSOR_PIN = 25;
+const String lightLevelText = "Light level: ";
 
 static bool hasIoTHub = false;
 int x = 0;
@@ -26,10 +27,11 @@ int previous_x = 0;
 int dimmerGracePeriod = 10 * 1000;
 long lastMovementDetected = 0;
 bool lightsTouched = false;
-bool lightsOn = true;          // makes more sense to assume lights are on. logic should not  turn on lights ever if initial state is on. in the future, call hue api to get initial state
-bool autoLightsEnabled = true; // maybe toggle from touch pin
+bool lightsOn = true;           // makes more sense to assume lights are on. logic should not  turn on lights ever if initial state is on. in the future, call hue api to get initial state
+bool autoLightsEnabled = false; // maybe toggle from touch pin
 
 HTTPClient http;
+TaskHandle_t telemetryProcessorTask;
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
 void setup()
@@ -55,10 +57,13 @@ void setup()
   }
   hasIoTHub = true;
 
+  Serial.printf("This is running on core %d\n", xPortGetCoreID());
+
+  Serial.println("Starting telemetry processor task");
+  xTaskCreatePinnedToCore(telemetryProcessor, "telemetryProcessor", 10000, NULL, 0, &telemetryProcessorTask, 0);
+
   previous_y = normalizeToGraph(analogRead(LIGHT_SENSOR_PIN));
 }
-
-const String lightLevelText = "Light level: ";
 
 void loop()
 {
@@ -216,4 +221,13 @@ void drawUiGrid()
 {
   display.drawLine(0, 9, SCREEN_WIDTH, 9, WHITE);
   display.drawLine(0, 58, SCREEN_WIDTH, 58, WHITE);
+}
+
+void telemetryProcessor(void *parameter)
+{
+  while (true)
+  {
+    Serial.printf("This should send telemetry from core %d\n", xPortGetCoreID());
+    delay(1500);
+  }
 }
