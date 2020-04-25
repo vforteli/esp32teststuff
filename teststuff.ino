@@ -62,6 +62,8 @@ const String lightLevelText = "Light level: ";
 
 void loop()
 {
+  long loopStart = millis();
+
   float lightValue = analogRead(LIGHT_SENSOR_PIN);
   displayText(lightLevelText + (uint)lightValue);
 
@@ -142,6 +144,7 @@ void loop()
     Serial.printf("Sending message took %d ms\n", millis() - startMillis);
   }
 
+  Serial.printf("Loop took %d ms\n", millis() - loopStart);
   delay(1000); // todo convert to non blocking
 }
 
