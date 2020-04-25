@@ -25,23 +25,37 @@ int x = 0;
 int previous_y = 0;
 int previous_x = 0;
 int dimmerGracePeriod = 10 * 1000;
-long lastMovementDetected = 0;
 bool lightsTouched = false;
 bool lightsOn = true;           // makes more sense to assume lights are on. logic should not  turn on lights ever if initial state is on. in the future, call hue api to get initial state
 bool autoLightsEnabled = false; // maybe toggle from touch pin
+volatile long movementStopped = 0;
 
 HTTPClient http;
 TaskHandle_t telemetryProcessorTask;
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
+void IRAM_ATTR handleMovementChangedInterrupt()
+{
+  if (digitalRead(PIR_SENSOR_PIN) == LOW)
+  {
+    // maybe start a timer alarm interrupt here instead...
+    movementStopped = millis();
+  }
+  else
+  {
+    // ...and cancel it here if applicable
+    movementStopped = 0;
+  }
+}
+
 void setup()
 {
   Serial.begin(115200);
 
-  lastMovementDetected = millis();
-
   pinMode(PIR_SENSOR_PIN, INPUT);
   pinMode(LIGHT_SENSOR_PIN, INPUT);
+
+  attachInterrupt(digitalPinToInterrupt(PIR_SENSOR_PIN), handleMovementChangedInterrupt, CHANGE);
 
   setupDisplay();
   delay(500);
@@ -85,15 +99,31 @@ void loop()
     x = 0;
     previous_x = 0;
   }
-
-  bool movementDetected = digitalRead(PIR_SENSOR_PIN);
-  Serial.printf("Movement detected: %d\n", movementDetected);
+  Serial.printf("Reading light resistor and drawing display took %d ms\n", millis() - loopStart);
 
   long now = millis();
 
-  if (movementDetected)
+  if (movementStopped != 0)
   {
-    lastMovementDetected = now;
+    Serial.println("No movement detected...");
+    int foo = scale((float)(now - movementStopped), 0, dimmerGracePeriod, 0, SCREEN_WIDTH);
+    display.fillRect(0, 59, foo, 5, WHITE);
+    display.display();
+
+    if (autoLightsEnabled && movementStopped + dimmerGracePeriod < now && lightsOn)
+    {
+      int result = setLights(false);
+      if (result == HTTP_CODE_OK)
+      {
+        Serial.println("Lights turned off");
+        lightsOn = false;
+        lightsTouched = true;
+      }
+    }
+  }
+  else
+  {
+    Serial.println("Movement detected!");
     display.fillRect(0, 59, SCREEN_WIDTH, 5, BLACK);
     display.display();
 
@@ -108,30 +138,13 @@ void loop()
       }
     }
   }
-  else
-  {
-    int foo = scale((float)(now - lastMovementDetected), 0, dimmerGracePeriod, 0, SCREEN_WIDTH);
-    display.fillRect(0, 59, foo, 5, WHITE);
-    display.display();
-
-    if (autoLightsEnabled && lastMovementDetected + dimmerGracePeriod < now && lightsOn)
-    {
-      int result = setLights(false);
-      if (result == HTTP_CODE_OK)
-      {
-        Serial.println("Lights turned off");
-        lightsOn = false;
-        lightsTouched = true;
-      }
-    }
-  }
 
   if (hasIoTHub)
   {
     long startMillis = millis();
     DynamicJsonDocument json(128);
     json["lightLevel"] = lightValue;
-    json["movementDetected"] = movementDetected;
+    json["movementDetected"] = movementStopped == 0;
     json["lightsOn"] = lightsOn;
 
     char buffer[128];
