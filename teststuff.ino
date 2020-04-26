@@ -7,6 +7,7 @@
 #include <HTTPClient.h>
 #include "config.h"
 #include "utils.h"
+#include "lights.h"
 
 const int SDA_PIN = 5;
 const int SCL_PIN = 4;
@@ -27,26 +28,25 @@ int previous_y = 0;
 int previous_x = 0;
 int dimmerGracePeriod = 10 * 1000;
 bool lightsTouched = false;
-volatile bool lightsOn = true;     // makes more sense to assume lights are on. logic should not  turn on lights ever if initial state is on. in the future, call hue api to get initial state
-bool autoLightsEnabled = false;    // maybe toggle from touch pin
-volatile long movementStopped = 0; // use int to avoid need for mutex...
+volatile bool lightsOn = true;      // makes more sense to assume lights are on. logic should not  turn on lights ever if initial state is on. in the future, call hue api to get initial state
+bool autoLightsEnabled = false;     // maybe toggle from touch pin
+volatile ulong movementStopped = 0; // use int to avoid need for mutex...
 volatile uint lightLevel = 0;
 
-HTTPClient http;
 TaskHandle_t telemetryProcessorTask;
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
 void IRAM_ATTR handleMovementChangedInterrupt()
 {
-  if (digitalRead(PIR_SENSOR_PIN) == LOW)
+  if (digitalRead(PIR_SENSOR_PIN) == HIGH)
   {
     // maybe start a timer alarm interrupt here instead...
-    movementStopped = millis();
+    movementStopped = 0;
   }
   else
   {
     // ...and cancel it here if applicable
-    movementStopped = 0;
+    movementStopped = millis();
   }
 }
 
@@ -56,6 +56,11 @@ void setup()
 
   pinMode(PIR_SENSOR_PIN, INPUT);
   pinMode(LIGHT_SENSOR_PIN, INPUT);
+
+  if (digitalRead(PIR_SENSOR_PIN) == LOW)
+  {
+    movementStopped = millis();
+  }
 
   attachInterrupt(digitalPinToInterrupt(PIR_SENSOR_PIN), handleMovementChangedInterrupt, CHANGE);
 
@@ -73,8 +78,8 @@ void setup()
 
 void loop()
 {
-  long loopStart = millis();
-
+  ulong now = millis();
+  ulong _movementStopped = movementStopped;
   uint lightValue = analogRead(LIGHT_SENSOR_PIN);
   lightLevel = lightValue;
   displayText(lightLevelText + lightValue);
@@ -86,24 +91,26 @@ void loop()
   previous_y = y;
   previous_x = x;
   x += 1;
+
   if (x > 127)
   {
     display.fillRect(0, 10, SCREEN_WIDTH, 47, BLACK);
     x = 0;
     previous_x = 0;
   }
-  Serial.printf("Reading light resistor and drawing display took %d ms\n", millis() - loopStart);
 
-  long now = millis();
+  Serial.print("Movement stopped: ");
+  Serial.print(_movementStopped);
+  Serial.print(" now: ");
+  Serial.println(now);
 
-  if (movementStopped != 0)
+  if (_movementStopped != 0)
   {
-    Serial.println("No movement detected...");
-    int foo = scale((float)(now - movementStopped), 0, dimmerGracePeriod, 0, SCREEN_WIDTH);
+    int foo = scale((float)(now - _movementStopped), 0, dimmerGracePeriod, 0, SCREEN_WIDTH);
     display.fillRect(0, 59, foo, 5, WHITE);
     display.display();
 
-    if (autoLightsEnabled && movementStopped + dimmerGracePeriod < now && lightsOn)
+    if (autoLightsEnabled && _movementStopped + dimmerGracePeriod < now && lightsOn)
     {
       int result = setLights(false);
       if (result == HTTP_CODE_OK)
@@ -116,7 +123,6 @@ void loop()
   }
   else
   {
-    Serial.println("Movement detected!");
     display.fillRect(0, 59, SCREEN_WIDTH, 5, BLACK);
     display.display();
 
@@ -132,7 +138,7 @@ void loop()
     }
   }
 
-  Serial.printf("Loop took %d ms\n", millis() - loopStart);
+  //Serial.printf("Loop took %d ms\n", millis() - now);
   delay(100); // todo convert to non blocking
 }
 
@@ -180,24 +186,6 @@ void connectWifi()
   displayText("Wifi connected \\o/");
 }
 
-int setLights(bool on)
-{
-  Serial.print("Settings lights to: ");
-  Serial.println(on);
-  http.begin(hueApiUrl + "groups/5/action");
-  DynamicJsonDocument json(128);
-  json["on"] = on;
-  //json["transitiontime"] = 200; // 20 seconds
-
-  char buffer[128];
-  serializeJson(json, buffer);
-  int result = http.PUT(buffer);
-  http.end();
-  Serial.printf("Http result: %d\n", result);
-
-  return result;
-}
-
 void drawUiGrid()
 {
   display.drawLine(0, 9, SCREEN_WIDTH, 9, WHITE);
@@ -220,27 +208,25 @@ void startTelemetryProcessor(void *parameter)
   {
     if (hasIoTHub)
     {
+      ulong _movementstopped = movementStopped;
+      Serial.print("Sending movement stopped: ");
+      Serial.println(_movementstopped);
+
       // todo mutex?
-      long startMillis = millis();
       DynamicJsonDocument json(128);
       json["lightLevel"] = lightLevel;
-      json["movementDetected"] = movementStopped == 0;
+      json["movementDetected"] = _movementstopped == 0;
       json["lightsOn"] = lightsOn;
 
       char buffer[128];
       serializeJson(json, buffer);
 
-      if (Esp32MQTTClient_SendEvent(buffer))
+      if (!Esp32MQTTClient_SendEvent(buffer))
       {
-        Serial.println("Sending data succeeded");
+        Serial.println("Sending telemetry data failed...");
       }
-      else
-      {
-        Serial.println("Failure...");
-      }
-
-      Serial.printf("Sending message took %d ms\n", millis() - startMillis);
     }
+
     delay(1000);
   }
 }
