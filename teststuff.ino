@@ -27,9 +27,10 @@ int previous_y = 0;
 int previous_x = 0;
 int dimmerGracePeriod = 10 * 1000;
 bool lightsTouched = false;
-bool lightsOn = true;           // makes more sense to assume lights are on. logic should not  turn on lights ever if initial state is on. in the future, call hue api to get initial state
-bool autoLightsEnabled = false; // maybe toggle from touch pin
-volatile long movementStopped = 0;
+volatile bool lightsOn = true;     // makes more sense to assume lights are on. logic should not  turn on lights ever if initial state is on. in the future, call hue api to get initial state
+bool autoLightsEnabled = false;    // maybe toggle from touch pin
+volatile long movementStopped = 0; // use int to avoid need for mutex...
+volatile uint lightLevel = 0;
 
 HTTPClient http;
 TaskHandle_t telemetryProcessorTask;
@@ -75,6 +76,7 @@ void loop()
   long loopStart = millis();
 
   uint lightValue = analogRead(LIGHT_SENSOR_PIN);
+  lightLevel = lightValue;
   displayText(lightLevelText + lightValue);
 
   int y = normalizeToGraph(lightValue);
@@ -130,31 +132,8 @@ void loop()
     }
   }
 
-  if (hasIoTHub)
-  {
-    long startMillis = millis();
-    DynamicJsonDocument json(128);
-    json["lightLevel"] = lightValue;
-    json["movementDetected"] = movementStopped == 0;
-    json["lightsOn"] = lightsOn;
-
-    char buffer[128];
-    serializeJson(json, buffer);
-
-    if (Esp32MQTTClient_SendEvent(buffer))
-    {
-      Serial.println("Sending data succeeded");
-    }
-    else
-    {
-      Serial.println("Failure...");
-    }
-
-    Serial.printf("Sending message took %d ms\n", millis() - startMillis);
-  }
-
   Serial.printf("Loop took %d ms\n", millis() - loopStart);
-  delay(1000); // todo convert to non blocking
+  delay(100); // todo convert to non blocking
 }
 
 int normalizeToGraph(uint value)
@@ -164,8 +143,6 @@ int normalizeToGraph(uint value)
 
 void displayText(String value)
 {
-  Serial.println(value);
-
   display.fillRect(0, 0, SCREEN_WIDTH, 8, BLACK);
   display.setTextColor(WHITE);
   display.setTextSize(1);
@@ -241,7 +218,29 @@ void startTelemetryProcessor(void *parameter)
 
   while (true)
   {
-    Serial.printf("This should send telemetry from core %d\n", xPortGetCoreID());
+    if (hasIoTHub)
+    {
+      // todo mutex?
+      long startMillis = millis();
+      DynamicJsonDocument json(128);
+      json["lightLevel"] = lightLevel;
+      json["movementDetected"] = movementStopped == 0;
+      json["lightsOn"] = lightsOn;
+
+      char buffer[128];
+      serializeJson(json, buffer);
+
+      if (Esp32MQTTClient_SendEvent(buffer))
+      {
+        Serial.println("Sending data succeeded");
+      }
+      else
+      {
+        Serial.println("Failure...");
+      }
+
+      Serial.printf("Sending message took %d ms\n", millis() - startMillis);
+    }
     delay(1000);
   }
 }
