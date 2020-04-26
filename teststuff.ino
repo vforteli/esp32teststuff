@@ -20,7 +20,8 @@ const int LIGHT_SENSOR_PIN = 39;
 const int PIR_SENSOR_PIN = 25;
 const String lightLevelText = "Light level: ";
 
-static bool hasIoTHub = false;
+volatile bool hasIoTHub = false;
+
 int x = 0;
 int previous_y = 0;
 int previous_x = 0;
@@ -63,18 +64,8 @@ void setup()
   connectWifi();
   delay(500);
 
-  if (!Esp32MQTTClient_Init((const uint8_t *)connectionString))
-  {
-    hasIoTHub = false;
-    Serial.println("Initializing IoT hub failed.");
-    return;
-  }
-  hasIoTHub = true;
-
-  Serial.printf("This is running on core %d\n", xPortGetCoreID());
-
   Serial.println("Starting telemetry processor task");
-  xTaskCreatePinnedToCore(telemetryProcessor, "telemetryProcessor", 10000, NULL, 0, &telemetryProcessorTask, 0);
+  xTaskCreatePinnedToCore(startTelemetryProcessor, "telemetryProcessor", 10000, NULL, 0, &telemetryProcessorTask, 0);
 
   previous_y = normalizeToGraph(analogRead(LIGHT_SENSOR_PIN));
 }
@@ -83,8 +74,8 @@ void loop()
 {
   long loopStart = millis();
 
-  float lightValue = analogRead(LIGHT_SENSOR_PIN);
-  displayText(lightLevelText + (uint)lightValue);
+  uint lightValue = analogRead(LIGHT_SENSOR_PIN);
+  displayText(lightLevelText + lightValue);
 
   int y = normalizeToGraph(lightValue);
 
@@ -166,7 +157,7 @@ void loop()
   delay(1000); // todo convert to non blocking
 }
 
-int normalizeToGraph(float value)
+int normalizeToGraph(uint value)
 {
   return scale(value, 0, 4095, graphMaxY, graphMinY);
 }
@@ -236,11 +227,21 @@ void drawUiGrid()
   display.drawLine(0, 58, SCREEN_WIDTH, 58, WHITE);
 }
 
-void telemetryProcessor(void *parameter)
+void startTelemetryProcessor(void *parameter)
 {
+  Serial.printf("Starting telemetry processor on core %d\n", xPortGetCoreID());
+
+  if (!Esp32MQTTClient_Init((const uint8_t *)connectionString))
+  {
+    hasIoTHub = false;
+    Serial.println("Initializing IoT hub failed.");
+    return;
+  }
+  hasIoTHub = true;
+
   while (true)
   {
     Serial.printf("This should send telemetry from core %d\n", xPortGetCoreID());
-    delay(1500);
+    delay(1000);
   }
 }
