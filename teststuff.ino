@@ -78,6 +78,7 @@ void setup()
 
 void loop()
 {
+  getGroupLights(5);
   ulong now = millis();
   ulong _movementStopped = movementStopped;
   uint lightValue = analogRead(LIGHT_SENSOR_PIN);
